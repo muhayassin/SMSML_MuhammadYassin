@@ -1,4 +1,6 @@
-mlflow
 pandas
 numpy
 scikit-learn
+matplotlib
+seaborn
+mlflow
