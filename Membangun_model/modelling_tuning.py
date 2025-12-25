@@ -6,41 +6,27 @@ import seaborn as sns
 
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    confusion_matrix
+)
 
 import mlflow
 import mlflow.sklearn
 
 # ===============================
-# MLflow CONFIG
-# ===============================
-mlflow.set_tracking_uri("http://127.0.0.1:5000")
-mlflow.set_experiment("Eksperimen_Telco_Churn_Tuning")
-
-# ===============================
-# PATH SETUP
+# PATH SETUP (PREPROCESSED DATA)
 # ===============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_PATH = os.path.join(BASE_DIR, "WA_Fn-UseC_-Telco-Customer-Churn.csv")
+DATA_PATH = os.path.join(
+    BASE_DIR, "..", "..", "data", "preprocessed_telco_customer_churn.csv"
+)
 
 print(f"[INFO] Load dataset: {DATA_PATH}")
 df = pd.read_csv(DATA_PATH)
-
-# ===============================
-# PREPROCESSING
-# ===============================
-df.drop("customerID", axis=1, inplace=True)
-
-df["TotalCharges"] = pd.to_numeric(df["TotalCharges"], errors="coerce")
-df.dropna(inplace=True)
-
-df["Churn"] = df["Churn"].map({"Yes": 1, "No": 0})
-
-categorical_cols = df.select_dtypes(include=["object"]).columns
-le = LabelEncoder()
-for col in categorical_cols:
-    df[col] = le.fit_transform(df[col])
 
 # ===============================
 # FEATURE & TARGET
@@ -49,7 +35,8 @@ X = df.drop("Churn", axis=1)
 y = df["Churn"]
 
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y,
+    X,
+    y,
     test_size=0.2,
     random_state=42,
     stratify=y
@@ -68,10 +55,10 @@ best_model = None
 best_params = {}
 best_y_pred = None
 
-print("[INFO] Mulai Hyperparameter Tuning...")
+print("[INFO] Mulai Hyperparameter Tuning RandomForest...")
 
 # ===============================
-# PARENT RUN
+# PARENT MLFLOW RUN
 # ===============================
 with mlflow.start_run(run_name="RF_Tuning_Telco_Parent"):
 
@@ -80,9 +67,6 @@ with mlflow.start_run(run_name="RF_Tuning_Telco_Parent"):
 
             run_name = f"n_estimators={n}_max_depth={depth}"
 
-            # ===============================
-            # NESTED RUN
-            # ===============================
             with mlflow.start_run(run_name=run_name, nested=True):
 
                 model = RandomForestClassifier(
@@ -99,7 +83,9 @@ with mlflow.start_run(run_name="RF_Tuning_Telco_Parent"):
                 rec = recall_score(y_test, y_pred)
                 f1 = f1_score(y_test, y_pred)
 
-                # ===== MANUAL LOGGING =====
+                # ===============================
+                # LOG PARAM & METRIC
+                # ===============================
                 mlflow.log_param("n_estimators", n)
                 mlflow.log_param("max_depth", depth)
 
@@ -108,7 +94,7 @@ with mlflow.start_run(run_name="RF_Tuning_Telco_Parent"):
                 mlflow.log_metric("recall", rec)
                 mlflow.log_metric("f1_score", f1)
 
-                print(f"[RUN] {run_name} | Acc: {acc:.4f}")
+                print(f"[RUN] {run_name} | Accuracy: {acc:.4f}")
 
                 if acc > best_acc:
                     best_acc = acc
@@ -136,12 +122,13 @@ with mlflow.start_run(run_name="RF_Tuning_Telco_Parent"):
     mlflow.sklearn.log_model(best_model, "best_model_telco")
 
     # ===============================
-    # ARTIFACT 1: CONFUSION MATRIX
+    # ARTIFACT: CONFUSION MATRIX
     # ===============================
     cm = confusion_matrix(y_test, best_y_pred)
+
     plt.figure(figsize=(6, 5))
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
-    plt.title("Confusion Matrix - Best Model")
+    plt.title("Confusion Matrix - Best RF Model")
     plt.xlabel("Predicted")
     plt.ylabel("Actual")
 
@@ -151,13 +138,13 @@ with mlflow.start_run(run_name="RF_Tuning_Telco_Parent"):
     mlflow.log_artifact(cm_file)
 
     # ===============================
-    # ARTIFACT 2: FEATURE IMPORTANCE
+    # ARTIFACT: FEATURE IMPORTANCE
     # ===============================
     importances = best_model.feature_importances_
     indices = np.argsort(importances)[::-1]
 
     plt.figure(figsize=(10, 6))
-    plt.title("Feature Importance")
+    plt.title("Feature Importance - Best RF Model")
     plt.bar(range(X.shape[1]), importances[indices])
     plt.xticks(range(X.shape[1]), X.columns[indices], rotation=45)
     plt.tight_layout()
@@ -167,7 +154,7 @@ with mlflow.start_run(run_name="RF_Tuning_Telco_Parent"):
     plt.close()
     mlflow.log_artifact(fi_file)
 
-    # Cleanup
+    # Cleanup local files
     os.remove(cm_file)
     os.remove(fi_file)
 
